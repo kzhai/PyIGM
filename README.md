@@ -33,9 +33,9 @@ and run the following command on example dataset,
 
 The generic argument to run PyIGM is
 
-	python -m PyIGM.launch_train --input_directory=$INPUT_DIRECTORY/$CORPUS_NAME --output_directory=$OUTPUT_DIRECTORY --training_iterations=$NUMBER_OF_ITERATIONS
+	python -m PyIGM.launch_train --input_directory=$INPUT_DIRECTORY/$DATASET_NAME --output_directory=$OUTPUT_DIRECTORY --training_iterations=$NUMBER_OF_ITERATIONS
 
-You should be able to find the output at directory ```$OUTPUT_DIRECTORY/$CORPUS_NAME```.
+You should be able to find the output at directory ```$OUTPUT_DIRECTORY/$DATASET_NAME```.
 
 Under any cirsumstances, you may also get help information and usage hints by running the following command
 
