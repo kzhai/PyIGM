@@ -1,101 +1,69 @@
-#!/usr/bin/python
-import cPickle, getopt, sys, time, re
+import cPickle, string, numpy, getopt, sys, random, time, re, pprint
 import datetime, os;
 
-import scipy.io;
 import nltk;
 import numpy;
-import optparse;
 
-"""
-normalize the data, i.e., subtract the mean, and divide by the variance
-"""
-def normalize_data(data):
-    (N, D) = data.shape;
-    data = data - numpy.tile(data.mean(axis=0), (N, 1));
-    data = data / numpy.var(data, axis=0)[numpy.newaxis, :];
-    return data
+import optparse;
 
 def parse_args():
     parser = optparse.OptionParser()
     parser.set_defaults(# parameter set 1
                         input_directory=None,
                         output_directory=None,
-                        # dictionary=None,
+                        #dataset_name=None,
                         
                         # parameter set 2
-                        training_iterations=-1,
-                        snapshot_interval=10,
-                        # number_of_topics=-1,
-
-                        # parameter set 3
                         alpha_alpha=1,
-                        initial_kappa=1,
-                        initial_nu=1,
+                        alpha_kappa=1,
+                        alpha_nu=1,
+                        mu_0=None,
+                        lambda_0=None,
                         
-                        # parameter set 4
-                        # disable_alpha_theta_update=False,
-                        inference_mode=0,
+                        # parameter set 3
+                        training_iterations=1000,
+                        snapshot_interval=100,
+                        #sampling_approach=0,
                         )
     # parameter set 1
     parser.add_option("--input_directory", type="string", dest="input_directory",
                       help="input directory [None]");
     parser.add_option("--output_directory", type="string", dest="output_directory",
                       help="output directory [None]");
-    # parser.add_option("--corpus_name", type="string", dest="corpus_name",
-                      # help="the corpus name [None]")
-    # parser.add_option("--dictionary", type="string", dest="dictionary",
-                      # help="the dictionary file [None]")
-    
-    # parameter set 2
-    parser.add_option("--training_iterations", type="int", dest="training_iterations",
-                      help="total number of iterations [-1]");
-    parser.add_option("--snapshot_interval", type="int", dest="snapshot_interval",
-                      help="snapshot interval [10]");                      
-                      
-    # parameter set 3
-    parser.add_option("--alpha_alpha", type="float", dest="alpha_alpha",
-                      help="Dirichlet process scale parameter [1.0]")
-    parser.add_option("--initial_kappa", type="float", dest="initial_kappa",
-                      help="mean fraction [1.0]")
-    parser.add_option("--initial_nu", type="float", dest="initial_nu",
-                      help="degree of freedom [1.0]")
-    
-    # parameter set 4
-    # parser.add_option("--disable_alpha_theta_update", action="store_true", dest="disable_alpha_theta_update",
-                      # help="disable alpha_alpha (hyper-parameter for Dirichlet distribution of topics) update");
-    # parser.add_option("--inference_mode", type="int", dest="inference_mode",
-                      # help="inference mode [ " + 
-                            # "0 (default): hybrid inference, " + 
-                            # "1: monte carlo, " + 
-                            # "2: variational bayes " + 
-                            # "]");
-    # parser.add_option("--inference_mode", action="store_true", dest="inference_mode",
-    #                  help="run latent Dirichlet allocation in lda mode");
+    #parser.add_option("--dataset_name", type="string", dest="dataset_name",
+                      #help="the corpus name [None]");
 
+    # parameter set 2
+    parser.add_option("--alpha_alpha", type="float", dest="alpha_alpha",
+                      help="hyper-parameter for Dirichlet process of cluster [1]")
+    parser.add_option("--alpha_kappa", type="float", dest="alpha_kappa",
+                      help="hyper-parameter for degree of freedom [1]")
+    parser.add_option("--alpha_nu", type="float", dest="alpha_nu",
+                      help="hyper-parameter for covariance matrix [1]")
+    
+    # parameter set 3
+    parser.add_option("--training_iterations", type="int", dest="training_iterations",
+                      help="number of training iterations [1000]");
+    parser.add_option("--snapshot_interval", type="int", dest="snapshot_interval",
+                      help="snapshot interval [100]");
+    #parser.add_option("--sampling_approach", type="int", dest="sampling_approach",
+                      #help="sampling approach and heuristic [0(default):vanilla sampling, 1:component resampling, 2:random split-merge, 3:restricted split-merge]");
+                      
     (options, args) = parser.parse_args();
     return options;
 
 def main():
     options = parse_args();
-
-    # parameter set 2
-    # assert(options.number_of_topics>0);
-    # number_of_topics = options.number_of_topics;
-    assert(options.training_iterations > 0);
-    training_iterations = options.training_iterations;
-    assert(options.snapshot_interval > 0);
-    if options.snapshot_interval > 0:
-        snapshot_interval = options.snapshot_interval;
-    
-    # parameter set 4
-    # disable_alpha_theta_update = options.disable_alpha_theta_update;
-    # inference_mode = options.inference_mode;
     
     # parameter set 1
-    # assert(options.dataset_name!=None);
-    assert(options.input_directory != None);
-    assert(options.output_directory != None);
+    #assert(options.dataset_name!=None);
+    #dataset_name = options.dataset_name;
+    
+    assert(options.input_directory!=None);
+    assert(options.output_directory!=None);
+    
+    #input_directory = options.input_directory;
+    #input_directory = os.path.join(input_directory, dataset_name);
     
     input_directory = options.input_directory;
     input_directory = input_directory.rstrip("/");
@@ -109,96 +77,86 @@ def main():
         os.mkdir(output_directory);
     
     # Dataset
-    train_file_path = os.path.join(input_directory, 'train.dat')
-    train_data = numpy.loadtxt(train_file_path)
-    train_data = normalize_data(train_data);
-    print "successfully load all train_data from %s..." % (os.path.abspath(train_file_path));
+    input_file_path = os.path.join(input_directory, 'train.dat')
+    train_data = numpy.loadtxt(input_file_path);
+    print "successfully load all training data..."
+    
+    # parameter set 2
+    assert options.alpha_alpha>0;
+    alpha_alpha = options.alpha_alpha;
+    assert options.alpha_kappa>0;
+    alpha_kappa = options.alpha_kappa;
+    assert options.alpha_nu>0;
+    alpha_nu=options.alpha_nu;
     
     # parameter set 3
-    assert options.alpha_alpha > 0
-    alpha_alpha = options.alpha_alpha;
-    assert options.initial_kappa > 0;
-    initial_kappa = options.initial_kappa;
-    assert options.initial_nu > 0;
-    initial_nu = options.initial_nu;
-
+    if options.training_iterations>0:
+        training_iterations=options.training_iterations;
+    if options.snapshot_interval>0:
+        snapshot_interval=options.snapshot_interval;
+    #sampling_approach = options.sampling_approach;
+    
     # create output directory
     now = datetime.datetime.now();
-    suffix = now.strftime("%y%m%d-%H%M%S") + "";
-    suffix += "-%s" % ("lda");
+    suffix = now.strftime("%y%m%d-%H%M%S")+"";
+    suffix += "-%s" % ("igm");
     suffix += "-I%d" % (training_iterations);
     suffix += "-S%d" % (snapshot_interval);
-    # suffix += "-K%d" % (number_of_topics);
-    suffix += "-aa%f" % (alpha_alpha);
-    suffix += "-kz%f" % (initial_kappa);
-    suffix += "-nz%f" % (initial_nu);
-    # suffix += "-im%d" % (inference_mode);
-    # suffix += "-%s" % (resample_topics);
-    # suffix += "-%s" % (hash_oov_words);
+    suffix += "-aa%g" % (alpha_alpha);
+    suffix += "-ak%g" % (alpha_kappa);
+    suffix += "-an%g" % (alpha_nu);
+    #suffix += "-SA%d" % (sampling_approach);
     suffix += "/";
-    
+
     output_directory = os.path.join(output_directory, suffix);
     os.mkdir(os.path.abspath(output_directory));
-
-    # dict_file = options.dictionary;
-    # if dict_file != None:
-        # dict_file = dict_file.strip();
-        
+    
     # store all the options to a file
     options_output_file = open(output_directory + "option.txt", 'w');
     # parameter set 1
     options_output_file.write("input_directory=" + input_directory + "\n");
     options_output_file.write("dataset_name=" + dataset_name + "\n");
-    # options_output_file.write("vocabulary_path=" + str(dict_file) + "\n");
     # parameter set 2
-    options_output_file.write("training_iterations=%d\n" % (training_iterations));
-    options_output_file.write("snapshot_interval=" + str(snapshot_interval) + "\n");
-    # options_output_file.write("number_of_topics=" + str(number_of_topics) + "\n");
-    # parameter set 3
     options_output_file.write("alpha_alpha=" + str(alpha_alpha) + "\n");
-    options_output_file.write("initial_kappa=" + str(initial_kappa) + "\n");
-    options_output_file.write("initial_nu=" + str(initial_nu) + "\n");
-    # parameter set 4
-    # options_output_file.write("inference_mode=%d\n" % (inference_mode));
+    options_output_file.write("alpha_nu=" + str(alpha_nu) + "\n");
+    options_output_file.write("alpha_kappa=" + str(alpha_kappa) + "\n");
+    # parameter set 3
+    options_output_file.write("training_iteration=%d\n" % training_iterations);
+    options_output_file.write("snapshot_interval=%d\n" % snapshot_interval);
+    #options_output_file.write("sampling_approach=%d\n" % sampling_approach);
     options_output_file.close()
-
+    
     print "========== ========== ========== ========== =========="
     # parameter set 1
     print "output_directory=" + output_directory
     print "input_directory=" + input_directory
     print "dataset_name=" + dataset_name
-    # print "dictionary file=" + str(dict_file)
     # parameter set 2
-    print "training_iterations=%d" % (training_iterations);
-    print "snapshot_interval=" + str(snapshot_interval);
-    # print "number_of_topics=" + str(number_of_topics)
-    # parameter set 3
     print "alpha_alpha=" + str(alpha_alpha)
-    print "initial_kappa=" + str(initial_kappa)
-    print "initial_nu=" + str(initial_nu)
-    # parameter set 4
-    # print "inference_mode=%d" % (inference_mode)
+    print "alpha_nu=" + str(alpha_nu)
+    print "alpha_kappa=" + str(alpha_kappa)
+    # parameter set 3
+    print "training_iteration=%d" % (training_iterations);
+    print "snapshot_interval=%d" % (snapshot_interval);
+    #print "sampling_approach=%d" % (sampling_approach)
     print "========== ========== ========== ========== =========="
     
     import monte_carlo;
-    igm_inferencer = monte_carlo.MonteCarlo();
-    igm_inferencer._initialize(train_data, alpha_alpha, initial_kappa, initial_nu);
+    igm = monte_carlo.MonteCarlo();
+    igm._initialize(train_data, alpha_alpha, alpha_kappa, alpha_nu);
+    
+    igm.export_snapshot(output_directory);
     
     for iteration in xrange(training_iterations):
-        log_likelihood = igm_inferencer.learning();
-        
-        print "iteration: %i\tK: %i\tlikelihood: %f" % (igm_inferencer._counter, igm_inferencer._K, log_likelihood);
+        clock = time.time();
+        log_likelihood = igm.learning();
+        clock = time.time()-clock;
+        print 'training iteration %d finished in %f seconds: number-of-clusters = %d, log-likelihood = %f' % (igm._iteration_counter, clock, igm._K, log_likelihood);
 
-        if (igm_inferencer._counter % snapshot_interval == 0):
-            igm_inferencer.export_snapshot(output_directory);
-            print "successfully export the snapshot to " + output_directory + " for iteration " + str(igm_inferencer._counter) + "..."
-        
-        print igm_inferencer._K
-        print igm_inferencer._count[:igm_inferencer._K]
-        # print igm_inferencer._label
-    
-    model_snapshot_path = os.path.join(output_directory, 'model-' + str(igm_inferencer._counter));
-    cPickle.dump(igm_inferencer, open(model_snapshot_path, 'wb'));
-    
+        if (igm._iteration_counter % snapshot_interval == 0):
+            igm.export_snapshot(output_directory);
+
+    igm.export_snapshot(output_directory);
+
 if __name__ == '__main__':
     main()
